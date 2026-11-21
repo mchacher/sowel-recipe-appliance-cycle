@@ -62,4 +62,4 @@ git push -u origin chore/registry-appliance-cycle-<version>
 gh pr create --title "chore(registry): bump appliance-cycle to <version>" --body "Registry hash for sowel-recipe-appliance-cycle v<version>"
 ```
 
-If the recipe is not yet in the registry (first release), add its entry with `owner` and `sha256`, see the core's `CLAUDE.md`, "Plugin supply chain security". Until it is, install it through a personal source (spec 136).
+If the recipe is not yet in the registry (first release), add its entry with `owner` and `sha256`, see the core's `CLAUDE.md`, "Plugin registry (spec 089)", and its `sowel-plugin-dev` skill. Until it is, install it through a personal source (spec 136).

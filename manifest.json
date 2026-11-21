@@ -1,0 +1,18 @@
+{
+  "id": "appliance-cycle",
+  "type": "recipe",
+  "name": "Appliance cycle",
+  "version": "0.1.0",
+  "description": "Reads an appliance's cycle on its measured power, publishes its run state on the equipment and raises an alarm when a cycle ends",
+  "icon": "WashingMachine",
+  "repo": "mchacher/sowel-recipe-appliance-cycle",
+  "author": "mchacher",
+  "tags": ["automation", "appliance", "energy", "alarm"],
+  "i18n": {
+    "fr": {
+      "name": "Cycle d'appareil",
+      "description": "Lit le cycle d'un appareil sur sa puissance mesurée, publie son état de marche sur l'équipement et lève une alarme à la fin d'un cycle"
+    }
+  },
+  "sowelVersion": ">=1.88.0"
+}
