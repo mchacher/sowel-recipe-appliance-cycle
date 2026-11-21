@@ -65,7 +65,7 @@ Decisions taken with the maintainer (2026-11-21):
 
 Validation (an instance is refused with the message): the equipment exists, is in the zone, is an
 `appliance` and has a `power` binding of type `number`; `1 < endW ≤ startW ≤ 5000`;
-`30 s ≤ endDelay ≤ 60 min`.
+`1 min ≤ endDelay ≤ 60 min` (the form sends whole minutes).
 
 ### FR2 — The published state
 
@@ -92,7 +92,9 @@ On each `power` value `P` (W) of the equipment, with `OFF_W = 1`:
 2. **Switched off during the end delay**, the machine goes through `finished`, held 5 s
    (`FINISHED_HOLD_MS`) before `off`. Two state changes in the same second lose the second one to
    the core's 1 s burst dedup of recipe notifications (the alarm would never reset) and to
-   InfluxDB's 1 s precision (the `finished` point would be overwritten). A 0 W sample during the
+   InfluxDB's 1 s precision (the `finished` point would be overwritten). The hold applies on every
+   path: when the delay runs out a moment before the plug reads 0 W (the 2026-11-11 cycle: both
+   in the same second), `off` still waits until `finished` is 5 s old. A 0 W sample during the
    hold changes nothing; a reading of 1 W or more drops it and applies normally.
 3. Switched off with no delay running (mid-cycle, by hand): straight to `off`, no `finished`.
 4. A `power` value that is not a finite number is ignored.
@@ -104,7 +106,10 @@ On each `power` value `P` (W) of the equipment, with `OFF_W = 1`:
 1. At start the state is rebuilt from the equipment's current power: `> startW` → `running`,
    `< OFF_W` → `off`, otherwise `ready`. Never `finished`: the end of a cycle that straddles a
    restart can be missed, never announced twice.
-2. A power reading older than its freshness budget (`freshnessBudgetMs` on the binding, core spec 175) is no ground to start from: the state is published `null` until the plug reports again.
+2. A reading of 1 W or more older than its freshness budget (`freshnessBudgetMs` on the binding,
+   core spec 175) is no ground to start from: the state is published `null` until the plug
+   reports again. An old 0 W still means `off`: a plug on a switched-off machine reports rarely,
+   and the core's budget right after a restart is short (10 min).
 3. No power value yet: `null` until the first one.
 
 ### FR5 — The alarm
@@ -127,7 +132,9 @@ On each `power` value `P` (W) of the equipment, with `OFF_W = 1`:
 | `finished` | `Terminé à 15:36 (84 min)`             |
 | `null`     | `En attente d'une mesure de puissance` |
 
-Times are local `HH:MM`. A cycle length is known only for a cycle whose start was seen.
+Times are local `HH:MM`. The end of a cycle is its first sample below `endW`, not the moment the
+delay confirmed it; the length runs from the start to that sample. A length is known only for a
+cycle whose start was seen.
 
 ### FR7 — Stop
 
@@ -136,14 +143,14 @@ its value (core spec 214 FR4.3). Idempotent.
 
 ## Acceptance Criteria
 
-- [ ] Replaying the recorded 2026-11-13 07:28 cycle publishes `running → finished → off`, the
+- [x] Replaying the recorded 2026-11-13 07:28 cycle publishes `running → finished → off`, the
       `finished` held 5 s, and raises the alarm once.
-- [ ] Replaying the 2026-11-11 cycle (100 s dip at 14:04 UTC) yields one `running` only.
-- [ ] A dip below `endW` shorter than `endDelay` does not end the cycle.
-- [ ] An instance on a non-appliance, or without a numeric `power`, or with `endW > startW`, is
+- [x] Replaying the 2026-11-11 cycle (100 s dip at 14:04 UTC) yields one `running` only.
+- [x] A dip below `endW` shorter than `endDelay` does not end the cycle.
+- [x] An instance on a non-appliance, or without a numeric `power`, or with `endW > startW`, is
       refused with a message naming the problem.
-- [ ] After a restart the state starts from the current power and is never `finished`.
-- [ ] `state.summary` and `state.alarm` follow the table above.
+- [x] After a restart the state starts from the current power and is never `finished`.
+- [x] `state.summary` and `state.alarm` follow the table above.
 - [ ] Installed on a core with spec 214, the machine's card shows the state and the history keeps
       it (checked in production after release).
 

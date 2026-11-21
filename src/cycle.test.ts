@@ -69,7 +69,7 @@ describe("validateThresholds", () => {
   it.each([
     [{ ...D, endW: 20 }, "endW"],
     [{ ...D, endW: 0.5 }, "endW"],
-    [{ ...D, endDelayMs: 10_000 }, "endDelay"],
+    [{ ...D, endDelayMs: 30_000 }, "endDelay"],
     [{ ...D, startW: 6000 }, "startW"],
     [{ ...D, startW: Number.NaN }, "numbers"],
   ])("refuses %o, naming %s", (t, field) => {
@@ -178,19 +178,58 @@ describe("CycleMachine", () => {
     vi.advanceTimersByTime(D.endDelayMs);
     machine.onPower(5);
     machine.onPower(0);
+    vi.advanceTimersByTime(FINISHED_HOLD_MS);
     expect(states()).toEqual(["running", "finished", "off"]);
   });
 
-  it("replays the 2026-11-13 cycle: one run, announced, then off", () => {
+  /** Time between `finished` and the `off` that follows it. */
+  const holdGap = () => {
+    const i = events.findIndex((e) => e.next === "finished");
+    return events[i + 1]!.at - events[i]!.at;
+  };
+
+  it("replays the 2026-11-13 cycle: one run, announced, then off 5 s later", () => {
     replay(CYCLE_2026_11_13);
     expect(states()).toEqual(["running", "finished", "off"]);
+    expect(holdGap()).toBeGreaterThanOrEqual(FINISHED_HOLD_MS);
   });
 
-  it("replays the 2026-11-11 cycle: the 100 s dip does not split it", () => {
+  it("replays the 2026-11-11 cycle: the 100 s dip does not split it, off 5 s later", () => {
+    // Its delay runs out in the very second the plug reads 0 W.
     replay(CYCLE_2026_11_11);
-    expect(states().filter((s) => s === "running")).toHaveLength(1);
-    expect(states()).toContain("finished");
-    expect(states().at(-1)).toBe("off");
+    expect(states()).toEqual(["running", "finished", "off"]);
+    expect(holdGap()).toBeGreaterThanOrEqual(FINISHED_HOLD_MS);
+  });
+
+  it("holds finished when the delay ran out a moment before the plug read 0 W", () => {
+    intoCycle();
+    machine.onPower(5);
+    vi.advanceTimersByTime(D.endDelayMs);
+    expect(machine.state).toBe("finished");
+    vi.advanceTimersByTime(200);
+    machine.onPower(0);
+    expect(machine.state).toBe("finished");
+    vi.advanceTimersByTime(FINISHED_HOLD_MS);
+    expect(states()).toEqual(["running", "finished", "off"]);
+    expect(holdGap()).toBeGreaterThanOrEqual(FINISHED_HOLD_MS);
+  });
+
+  it("dates the end of a cycle at its first low sample, not at the delay", () => {
+    intoCycle();
+    vi.advanceTimersByTime(30 * 60_000);
+    const low = Date.now();
+    machine.onPower(5);
+    vi.advanceTimersByTime(D.endDelayMs);
+    expect(machine.endedAt).toBe(low);
+  });
+
+  it("dates the end at the first low sample when switched off during the delay", () => {
+    intoCycle();
+    const low = Date.now();
+    machine.onPower(5);
+    vi.advanceTimersByTime(160_000);
+    machine.onPower(0);
+    expect(machine.endedAt).toBe(low);
   });
 
   it("remembers when the cycle started", () => {

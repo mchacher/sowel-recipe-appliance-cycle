@@ -15,8 +15,10 @@
  * through `finished`, held `FINISHED_HOLD_MS` before `off`: two changes in the
  * same second would lose the second one twice over, to the core's 1 s burst
  * dedup of recipe notifications (the alarm never resets) and to InfluxDB's 1 s
- * precision (the `finished` point is overwritten). Switched off mid-cycle (no
- * delay running), it goes straight to `off`.
+ * precision (the `finished` point is overwritten). The hold applies whatever
+ * the path: a delay that runs out a moment before the plug reads 0 W still
+ * keeps `finished` 5 s. Switched off mid-cycle (no delay running), it goes
+ * straight to `off`.
  *
  * Imports nothing from Sowel: replayed in tests against recorded cycles.
  */
@@ -92,8 +94,8 @@ export function validateThresholds(t: CycleThresholds): string | null {
   if (t.endW <= OFF_W) return `endW must be above ${OFF_W} W`;
   if (t.endW > t.startW) return "endW must not exceed startW";
   if (t.startW > 5000) return "startW must not exceed 5000 W";
-  if (t.endDelayMs < 30_000 || t.endDelayMs > 60 * 60_000) {
-    return "endDelay must be between 30 s and 60 min";
+  if (t.endDelayMs < 60_000 || t.endDelayMs > 60 * 60_000) {
+    return "endDelay must be between 1 and 60 min";
   }
   return null;
 }
@@ -112,6 +114,9 @@ export class CycleMachine {
   private current: CycleState | null = null;
   private since: number | null = null;
   private started: number | null = null;
+  /** Epoch ms of the first sample below `endW` of the current end delay. */
+  private lowSince: number | null = null;
+  private ended: number | null = null;
   private endTimer: Timer | null = null;
   private holdTimer: Timer | null = null;
   private stopped = false;
@@ -131,6 +136,14 @@ export class CycleMachine {
     return this.started;
   }
 
+  /**
+   * Epoch ms the last cycle ended: its first sample below `endW`, not the
+   * moment the delay confirmed it. `null` when not seen.
+   */
+  get endedAt(): number | null {
+    return this.ended;
+  }
+
   /** Epoch ms of the last change of state (or of the cold start). */
   get stateSince(): number | null {
     return this.since;
@@ -145,6 +158,8 @@ export class CycleMachine {
     this.current = coldCycleState(power, this.options.thresholds);
     this.since = this.now();
     this.started = null;
+    this.ended = null;
+    this.lowSince = null;
     return this.current;
   }
 
@@ -162,20 +177,29 @@ export class CycleMachine {
       clearTimeout(this.holdTimer);
       this.holdTimer = null;
     }
+    // `finished` entered less than FINISHED_HOLD_MS ago (the delay ran out a
+    // moment before the plug read 0 W): `off` waits out the rest of the hold.
+    if (this.current === "finished" && power < OFF_W && this.since !== null) {
+      const left = FINISHED_HOLD_MS - (this.now() - this.since);
+      if (left > 0) {
+        this.holdOff(left);
+        return;
+      }
+    }
     const step = nextCycleState(
       this.current,
       power,
       this.options.thresholds,
       this.endTimer !== null,
     );
+    const lowBefore = this.lowSince;
     if (step.cancelEndDelay) this.clearEndTimer();
     if (step.armEndDelay && !this.endTimer) this.armEndTimer();
     if (step.finishedFirst) {
+      // The cycle ended at its first low sample, not at the switch-off.
+      this.lowSince = lowBefore;
       this.transition("finished");
-      this.holdTimer = setTimeout(() => {
-        this.holdTimer = null;
-        if (!this.stopped && this.current === "finished") this.transition("off");
-      }, FINISHED_HOLD_MS);
+      this.holdOff(FINISHED_HOLD_MS);
       return;
     }
     if (step.state !== this.current) this.transition(step.state);
@@ -187,7 +211,15 @@ export class CycleMachine {
     this.clearTimers();
   }
 
+  private holdOff(ms: number): void {
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = null;
+      if (!this.stopped && this.current === "finished") this.transition("off");
+    }, ms);
+  }
+
   private armEndTimer(): void {
+    this.lowSince = this.now();
     this.endTimer = setTimeout(() => {
       this.endTimer = null;
       if (!this.stopped && this.current === "running") this.transition("finished");
@@ -199,6 +231,7 @@ export class CycleMachine {
       clearTimeout(this.endTimer);
       this.endTimer = null;
     }
+    this.lowSince = null;
   }
 
   private clearTimers(): void {
@@ -212,7 +245,11 @@ export class CycleMachine {
   private transition(next: CycleState): void {
     const previous = this.current ?? "off";
     const now = this.now();
-    if (next === "running") this.started = now;
+    if (next === "running") {
+      this.started = now;
+      this.ended = null;
+    }
+    if (next === "finished") this.ended = this.lowSince ?? now;
     this.current = next;
     this.since = now;
     this.options.onTransition(next, previous);

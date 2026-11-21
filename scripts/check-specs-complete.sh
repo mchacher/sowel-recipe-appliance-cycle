@@ -4,7 +4,7 @@
 #
 # A NEW spec folder marks a new feature, and a feature's folder must carry the
 # three documents the workflow produces:
-#   spec.md · architecture.md · plan.md
+#   spec.md, architecture.md, plan.md
 #
 # This check fails a PR only when it CREATES a new specs/<NNN-name>/ folder that
 # is missing one of the three. It deliberately ignores PRs that merely add files

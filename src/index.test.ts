@@ -115,7 +115,7 @@ describe("validate", () => {
   it("refuses thresholds out of order and a delay too short", () => {
     const h = harness({ dataBindings: [power(6)] });
     expect(() => recipe.validate({ ...params, startW: 10, endW: 20 }, h.ctx)).toThrow(/endW/);
-    expect(() => recipe.validate({ ...params, endDelay: "10s" }, h.ctx)).toThrow(/endDelay/);
+    expect(() => recipe.validate({ ...params, endDelay: "30s" }, h.ctx)).toThrow(/endDelay/);
   });
 
   it("refuses a core without the publishing channel", () => {
@@ -168,13 +168,16 @@ describe("createInstance", () => {
     h.emitPower(120);
     expect(h.published).toEqual(["ready", "running"]);
     expect(h.state.get("alarm")).toBe(false);
+    vi.advanceTimersByTime(72 * 60_000);
     h.emitPower(5);
     vi.advanceTimersByTime(DEFAULT_THRESHOLDS.endDelayMs);
     expect(h.published).toEqual(["ready", "running", "finished"]);
     expect(h.state.get("alarm")).toBe(true);
-    expect(String(h.state.get("summary"))).toMatch(/^Terminé à \d\d:\d\d \(5 min\)$/);
-    expect(h.logs).toEqual(["Cycle terminé (5 min)"]);
+    // The length runs to the first low sample, not to the end of the delay.
+    expect(String(h.state.get("summary"))).toMatch(/^Terminé à \d\d:\d\d \(72 min\)$/);
+    expect(h.logs).toEqual(["Cycle terminé (72 min)"]);
     h.emitPower(0);
+    vi.advanceTimersByTime(FINISHED_HOLD_MS);
     expect(h.published.at(-1)).toBe("off");
     expect(h.state.get("alarm")).toBe(false);
     handle.stop();
@@ -234,5 +237,12 @@ describe("startingPower", () => {
         now,
       ),
     ).toBe(6);
+    // An old 0 W still means off: a plug on a switched-off machine reports rarely.
+    expect(
+      startingPower(
+        power(0, { lastUpdated: "2026-11-21T09:00:00Z", freshnessBudgetMs: 120_000 }),
+        now,
+      ),
+    ).toBe(0);
   });
 });

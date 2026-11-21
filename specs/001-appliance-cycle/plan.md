@@ -4,16 +4,16 @@
 
 ### Slice A — Repository
 
-- [ ] Tooling copied from `sowel-plugin-simulator` (CLAUDE.md, skills, CI, gitleaks, husky,
+- [x] Tooling copied from `sowel-plugin-simulator` (CLAUDE.md, skills, CI, gitleaks, husky,
       Prettier, ESLint, specs checks), adapted to a recipe; `docs/specs-index.md`.
-- [ ] GitHub repo `mchacher/sowel-recipe-appliance-cycle`, `main-protection` ruleset.
+- [x] GitHub repo `mchacher/sowel-recipe-appliance-cycle`, `main-protection` ruleset.
 
 ### Slice B — The recipe
 
-- [ ] `src/cycle.ts` + tests (fixtures from the core's 608f2dd8).
-- [ ] `src/summary.ts` + tests.
-- [ ] `src/index.ts` + tests (validation, start, publish, alarm, summary, stop).
-- [ ] `manifest.json`, `README.md`.
+- [x] `src/cycle.ts` + tests (fixtures from the core's 608f2dd8).
+- [x] `src/summary.ts` + tests.
+- [x] `src/index.ts` + tests (validation, start, publish, alarm, summary, stop).
+- [x] `manifest.json`, `README.md`.
 
 ### Slice C — Release (maintainer's go)
 
@@ -33,10 +33,12 @@
 | cycle   | `finished`, 5 W / 0 W                                           | stays / `off`                                              |
 | cycle   | replay 2026-11-13                                               | `running → finished → off`                                 |
 | cycle   | replay 2026-11-11 (100 s dip)                                   | one `running`                                              |
+| cycle   | delay runs out, 0 W 200 ms later                                | `off` 5 s after `finished`, not at once                    |
+| cycle   | end of a cycle                                                  | dated at its first sample below `endW`                     |
 | cycle   | custom thresholds `{50, 20, 60 s}`, 30 W from `ready`           | stays `ready`                                              |
 | cycle   | `coldCycleState` 5 W / 0 W / 1900 W                             | `ready` / `off` / `running`, never `finished`              |
 | cycle   | `stop()` with a delay and a hold armed                          | no late transition                                         |
-| cycle   | `validateThresholds`: `endW > startW`, `endW = 0.5`, delay 10 s | message naming the field                                   |
+| cycle   | `validateThresholds`: `endW > startW`, `endW = 0.5`, delay 30 s | message naming the field                                   |
 | summary | each state, with and without a seen start                       | the FR6 phrase                                             |
 | index   | validate: not an appliance / no numeric power / bad thresholds  | throws naming the problem                                  |
 | index   | start at 6 W                                                    | publishes `ready`, `alarm` false, summary set              |

@@ -11,6 +11,7 @@ import {
   CYCLE_STATES,
   CycleMachine,
   DEFAULT_THRESHOLDS,
+  OFF_W,
   validateThresholds,
   type CycleState,
   type CycleThresholds,
@@ -58,7 +59,7 @@ const SLOTS: RecipeSlotDef[] = [
     type: "number",
     required: false,
     defaultValue: DEFAULT_THRESHOLDS.endW,
-    constraints: { min: 1, max: 5000 },
+    constraints: { min: 2, max: 5000 },
   },
   {
     id: "endDelay",
@@ -101,11 +102,15 @@ function powerBinding(bindings: readonly DataBindingWithValue[]): DataBindingWit
 }
 
 /**
- * The power to start from (FR4): `null` without a value, or when the reading is
- * older than its freshness budget (a plug offline across a restart).
+ * The power to start from (FR4): `null` without a value, or when a reading of
+ * 1 W or more is older than its freshness budget (a plug offline across a
+ * restart, last seen mid-cycle). An old 0 W still means off: a plug on a
+ * switched-off machine reports rarely, and the core's budget after a restart
+ * is short.
  */
 export function startingPower(binding: DataBindingWithValue, now: number): number | null {
   if (typeof binding.value !== "number" || !Number.isFinite(binding.value)) return null;
+  if (binding.value < OFF_W) return binding.value;
   if (binding.freshnessBudgetMs !== undefined && binding.lastUpdated) {
     const updated = Date.parse(binding.lastUpdated);
     if (!Number.isNaN(updated) && now - updated > binding.freshnessBudgetMs) return null;
@@ -187,6 +192,7 @@ export function createRecipe(): RecipeDefinition {
           buildSummary(machine.state, {
             runningSince: machine.runningSince,
             stateSince: machine.stateSince,
+            endedAt: machine.endedAt,
           }),
         );
       };
@@ -199,10 +205,9 @@ export function createRecipe(): RecipeDefinition {
             describe();
             if (next === "finished") {
               const started = machine.runningSince;
+              const ended = machine.endedAt;
               const minutes =
-                started !== null && machine.stateSince !== null
-                  ? Math.round((machine.stateSince - started) / 60_000)
-                  : null;
+                started !== null && ended !== null ? Math.round((ended - started) / 60_000) : null;
               ctx.log(minutes !== null ? `Cycle terminé (${minutes} min)` : "Cycle terminé");
             } else {
               ctx.logger.debug({ equipmentId, from: previous, to: next }, "Cycle state changed");
